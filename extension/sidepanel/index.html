@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Navigator</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- CONVERSATIONS -->
+    <div class="conv-bar">
+      <button id="conv-toggle" class="conv-toggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+      </button>
+      <span class="conv-current" id="conv-current">New conversation</span>
+      <button id="new-chat-btn" class="conv-new" title="New conversation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </button>
+    </div>
+    <div id="conv-list" class="conv-list"></div>
+
+    <!-- MODEL SELECTOR -->
+    <div class="model-bar">
+      <div class="model-selector">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2l9 5-9 5-9-5 9-5z"/>
+          <path d="M3 12l9 5 9-5"/>
+          <path d="M3 17l9 5 9-5"/>
+        </svg>
+        <select id="model-select" class="model-dropdown">
+          <option>Select a model...</option>
+        </select>
+      </div>
+      <button id="settings-btn" class="model-action-btn" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82-.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0 .33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- MAIN CHAT/AGENT AREA -->
+    <div class="chat-agent-area">
+      <!-- CHAT VIEW -->
+      <section id="view-chat" class="view active">
+        <div id="chat-msgs" class="msgs"></div>
+      </section>
+
+      <!-- AGENT VIEW -->
+      <section id="view-agent" class="view">
+        <div id="agent-msgs" class="msgs"></div>
+      </section>
+    </div>
+
+    <!-- INPUT SECTION -->
+    <div class="input-section">
+      <!-- Toggle Chat/Agent -->
+      <div class="toggle-bar">
+        <button class="toggle-btn active" data-mode="chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+          Chat
+        </button>
+        <button class="toggle-btn" data-mode="agent">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 2l9 5-9 5-9-5 9-5z"/>
+            <path d="M3 12l9 5 9-5"/>
+            <path d="M3 17l9 5 9-5"/>
+          </svg>
+          Agent
+        </button>
+
+      </div>
+
+      <!-- Input Bar -->
+      <div class="bar">
+        <input id="msg-inp" type="text" placeholder="Type your message...">
+        <button id="msg-btn">Send</button>
+        <button id="stop-btn" class="stop-btn" style="display:none">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <rect x="6" y="6" width="12" height="12" rx="2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Footer with permissions and costs -->
+      <div class="footer-info">
+        <span id="perm-display" class="perm-indicator">● None</span>
+        <span class="costs-value" id="costs-value">$0.00</span>
+      </div>
+    </div>
+
+    <!-- SIDE PANEL (Settings) -->
+    <div id="side-panel" class="side-panel">
+      <div class="panel-header">
+        <h3>Settings</h3>
+        <button id="close-panel-btn" class="close-panel-btn">×</button>
+      </div>
+      <div id="config-content" class="panel-content"></div>
+    </div>
+
+    <!-- OVERLAY -->
+    <div id="overlay" class="overlay"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
