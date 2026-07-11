@@ -856,12 +856,13 @@ CRITICAL RULES:
       const log = await executeAction(action)
       logs.push(log)
 
-      // After navigate or inspect, ask AI for next action
-      if ((action.type === 'navigate' || action.type === 'inspect') && !log.startsWith('⚠️') && !log.startsWith('❌')) {
+      // Only ask for next action if no more actions are already planned
+      const remainingPlanned = actions.slice(i + 1)
+      if (remainingPlanned.length === 0 && (action.type === 'navigate' || action.type === 'inspect') && !log.startsWith('⚠️') && !log.startsWith('❌')) {
         const followUp = await askForNextAction(provider, response, log)
         const nextActions = parseActionMarkers(followUp)
         if (nextActions.length > 0) {
-          actions.splice(i + 1, actions.length - i - 1, ...nextActions)
+          actions.push(...nextActions)
           followUpCount++
         }
       }
