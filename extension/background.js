@@ -95,6 +95,30 @@ const DEFAULT_MODELS = {
     { id: 'phi3:14b', label: 'Phi-3 14B' },
     { id: 'nous-hermes2:10b', label: 'Nous Hermes 2 10B' },
   ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
+    { id: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+    { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B' },
+  ],
+  together: [
+    { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' },
+    { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral 8x22B' },
+    { id: 'google/gemma-2-27b-it', label: 'Gemma 2 27B' },
+    { id: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek R1' },
+    { id: 'Qwen/Qwen2.5-72B-Instruct-Turbo', label: 'Qwen 2.5 72B' },
+  ],
+  perplexity: [
+    { id: 'sonar-pro', label: 'Sonar Pro' },
+    { id: 'sonar', label: 'Sonar' },
+    { id: 'sonar-deep-research', label: 'Sonar Deep Research' },
+  ],
+  xai: [
+    { id: 'grok-2', label: 'Grok 2' },
+    { id: 'grok-2-mini', label: 'Grok 2 Mini' },
+    { id: 'grok-vision', label: 'Grok Vision' },
+  ],
 }
 
 // ===== STORAGE =====
@@ -195,6 +219,31 @@ async function fetchModelsForProvider(providerId) {
           .map(m => ({ id: m.id, label: m.name || m.id }))
         break
       }
+      case 'groq': {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { Authorization: `Bearer ${config.apiKey}` },
+        })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const data = await res.json()
+        models = (data.data || [])
+          .sort((a, b) => (b.created || 0) - (a.created || 0))
+          .slice(0, 10)
+          .map(m => ({ id: m.id, label: m.id }))
+        break
+      }
+      case 'together': {
+        const res = await fetch('https://api.together.xyz/v1/models', {
+          headers: { Authorization: `Bearer ${config.apiKey}` },
+        })
+        if (!res.ok) throw new Error('HTTP ' + res.status)
+        const data = await res.json()
+        models = (data || [])
+          .filter(m => !m.id?.includes('embedding'))
+          .sort((a, b) => (b.created || 0) - (a.created || 0))
+          .slice(0, 15)
+          .map(m => ({ id: m.id, label: m.display_name || m.id }))
+        break
+      }
     }
 
     if (models.length > 0) {
@@ -249,6 +298,17 @@ const MODEL_PRICING = {
   'deepseek-v4-flash': { input: 0.15, output: 0.60 },
   'deepseek-chat': { input: 0.07, output: 1.10 },
   'deepseek-reasoner': { input: 0.55, output: 2.19 },
+  'llama-3.3-70b-versatile': { input: 0.59, output: 0.79 },
+  'llama-3.1-8b-instant': { input: 0.05, output: 0.08 },
+  'mixtral-8x7b-32768': { input: 0.24, output: 0.24 },
+  'gemma2-9b-it': { input: 0.20, output: 0.20 },
+  'meta-llama/Llama-3.3-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
+  'mistralai/Mixtral-8x22B-Instruct-v0.1': { input: 0.90, output: 0.90 },
+  'google/gemma-2-27b-it': { input: 0.30, output: 0.30 },
+  'sonar-pro': { input: 3.00, output: 15.00 },
+  'sonar': { input: 1.00, output: 1.00 },
+  'grok-2': { input: 2.00, output: 10.00 },
+  'grok-2-mini': { input: 0.10, output: 0.40 },
 }
 
 async function chatWithProvider(provider, model, messages, tools, signal) {
@@ -308,6 +368,30 @@ async function chatWithProvider(provider, model, messages, tools, signal) {
     case 'ollama': {
       url = `${config.baseUrl || 'http://localhost:11434'}/api/chat`
       body = { model: model || 'llama3.3:70b', messages, stream: true }
+      break
+    }
+    case 'groq': {
+      url = `${config.baseUrl || 'https://api.groq.com/openai/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      body = { model: model || 'llama-3.3-70b-versatile', messages, stream: true }
+      break
+    }
+    case 'together': {
+      url = `${config.baseUrl || 'https://api.together.xyz/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      body = { model: model || 'meta-llama/Llama-3.3-70B-Instruct-Turbo', messages, stream: true }
+      break
+    }
+    case 'perplexity': {
+      url = `${config.baseUrl || 'https://api.perplexity.ai'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      body = { model: model || 'sonar-pro', messages, stream: true }
+      break
+    }
+    case 'xai': {
+      url = `${config.baseUrl || 'https://api.x.ai/v1'}/chat/completions`
+      headers['Authorization'] = `Bearer ${config.apiKey}`
+      body = { model: model || 'grok-2', messages, stream: true }
       break
     }
     default:

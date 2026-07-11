@@ -23,6 +23,10 @@ const PROVIDERS = [
   { id: 'deepseek', label: 'DeepSeek', ph: 'sk-...' },
   { id: 'openrouter', label: 'OpenRouter', ph: 'sk-or-...' },
   { id: 'ollama', label: 'Ollama', ph: 'http://localhost:11434' },
+  { id: 'groq', label: 'Groq', ph: 'gsk_...' },
+  { id: 'together', label: 'Together AI', ph: 'tgp-...' },
+  { id: 'perplexity', label: 'Perplexity', ph: 'pplx-...' },
+  { id: 'xai', label: 'xAI (Grok)', ph: 'xai-...' },
 ]
 
 const MODELS = {
@@ -102,6 +106,30 @@ const MODELS = {
     { id: 'mistral:7b', label: 'Mistral 7B' },
     { id: 'phi3:14b', label: 'Phi-3 14B' },
     { id: 'nous-hermes2:10b', label: 'Nous Hermes 2 10B' },
+  ],
+  groq: [
+    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
+    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
+    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
+    { id: 'gemma2-9b-it', label: 'Gemma 2 9B' },
+    { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B' },
+  ],
+  together: [
+    { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' },
+    { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral 8x22B' },
+    { id: 'google/gemma-2-27b-it', label: 'Gemma 2 27B' },
+    { id: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek R1' },
+    { id: 'Qwen/Qwen2.5-72B-Instruct-Turbo', label: 'Qwen 2.5 72B' },
+  ],
+  perplexity: [
+    { id: 'sonar-pro', label: 'Sonar Pro' },
+    { id: 'sonar', label: 'Sonar' },
+    { id: 'sonar-deep-research', label: 'Sonar Deep Research' },
+  ],
+  xai: [
+    { id: 'grok-2', label: 'Grok 2' },
+    { id: 'grok-2-mini', label: 'Grok 2 Mini' },
+    { id: 'grok-vision', label: 'Grok Vision' },
   ],
 }
 

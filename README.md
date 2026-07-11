@@ -22,7 +22,7 @@
 
 ## 🚀 Supported Providers
 
-OpenAI · Anthropic · Google AI · Mistral · DeepSeek · OpenRouter · Ollama
+OpenAI · Anthropic · Google AI · Mistral · DeepSeek · OpenRouter · Ollama · Groq · Together AI · Perplexity · xAI (Grok)
 
 ## 📦 Installation
 
