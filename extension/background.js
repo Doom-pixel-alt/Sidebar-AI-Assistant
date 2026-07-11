@@ -758,7 +758,7 @@ async function handleChat(messages, tools) {
   return { success: true, content: fullContent }
 }
 
-// ===== AGENT COMMANDS (Talk + Act) =====
+// ===== AGENT COMMANDS (Plan → Execute with inspect between steps) =====
 async function handleAgentCommand(command, conversationHistory) {
   const provider = state.activeProvider
   const config = state.providers[provider]
@@ -771,13 +771,13 @@ async function handleAgentCommand(command, conversationHistory) {
   const controller = new AbortController()
   _activeAbort = controller
 
-  // Build messages with system prompt, history, and current command
-  const sysPrompt = `You are a browser automation assistant. You MUST respond conversationally AND include [ACTION] markers when the user asks you to do something.
+  // Phase 1: AI plans ALL actions upfront
+  const sysPrompt = `You are a browser automation assistant. Plan ALL steps needed and include ALL action markers in your response.
 
 AVAILABLE ACTIONS:
 [NAVIGATE] https://url
-[TYPE] css-selector | text to type
-[CLICK] css-selector
+[TYPE] selector | text
+[CLICK] selector
 [READ]
 [INSPECT]
 
@@ -785,96 +785,79 @@ CURRENT PERMISSIONS: ${allowed.join(', ') || 'None'}
 
 KNOWN SELECTORS:
 - YouTube search: input[name="search_query"]
-- YouTube video: a[href*="/watch?v="]
+- YouTube videos: a#video-title or a[href*="/watch?v="]
 - Google search: input[name="q"]
-- Gemini chat: div[contenteditable="true"]
+- Gemini: div[contenteditable="true"]
 
-CRITICAL RULES:
-1. If the user asks you to DO something on a website, you MUST include action markers
-2. NEVER just talk about what you'd do — actually include [NAVIGATE], [TYPE], [CLICK] markers
-3. Always include [TYPE] and [CLICK] after navigating if the request involves searching or interacting
-4. If you need to know the page structure, use [INSPECT] after navigating
-5. BAD: "I'll go to YouTube and search for Mr Beast" (no actions → nothing happens)
-6. GOOD: "Going to YouTube to search for Mr Beast! [NAVIGATE] https://youtube.com [TYPE] input[name=\"search_query\"] | mr beast [CLICK] button[aria-label=\"Search\"]"`
-
+RULES:
+1. Include ALL actions needed in ONE response, separated by spaces or newlines
+2. Example: "Going to YouTube to search! [NAVIGATE] https://youtube.com [TYPE] input[name=\"search_query\"] | mr beast [CLICK] button[aria-label=\"Search\"] [CLICK] a#video-title"
+3. After [CLICK] or [NAVIGATE], the page changes — use selectors that will work on the NEW page state
+4. Include [INSPECT] before clicking/typing on a new page to discover correct selectors
+5. BAD (no actions): "I'll search for that!" → nothing happens
+6. GOOD (full plan): "Let me search! [NAVIGATE] https://youtube.com [TYPE] input[name=\"search_query\"] | mr beast [CLICK] button[aria-label=\"Search\"] [INSPECT] [CLICK] a#video-title"`
   const messages = [{ role: 'system', content: sysPrompt }]
-  if (conversationHistory) {
-    for (const m of conversationHistory.slice(-10)) {
-      messages.push({ role: m.role, content: m.content })
-    }
-  }
+  if (conversationHistory) for (const m of conversationHistory.slice(-10)) messages.push({ role: m.role, content: m.content })
   messages.push({ role: 'user', content: command })
 
-  // Phase 1: Get AI's full response (conversation + action markers)
   let response = ''
   try {
     const reader = await chatWithProvider(provider, state.activeModel, messages, null, controller.signal)
     const decoder = new TextDecoder()
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      response += parseStreamChunk(provider, decoder.decode(value, { stream: true }))
-    }
+    while (true) { const { done, value } = await reader.read(); if (done) break; response += parseStreamChunk(provider, decoder.decode(value, { stream: true })) }
   } catch (err) {
-    _activeAbort = null
-    if (err.name === 'AbortError') return { response: 'Cancelled.', logs: [] }
+    _activeAbort = null; if (err.name === 'AbortError') return { response: 'Cancelled.', logs: [] }
     return { response: `Error: ${err.message}`, logs: [] }
   }
   _activeAbort = null
 
-  // Phase 2: Parse and execute actions
+  // Phase 2: Execute actions sequentially with inspect between page-changing steps
   const logs = []
   let actions = parseActionMarkers(response)
-
-  // Retry if AI forgot actions but user asked for something
   if (actions.length === 0) {
-    const retryMsgs = [
-      { role: 'system', content: 'The user asked you to do something on a website, but your previous response had no action markers. Reply with ONLY the action markers needed — no conversation.' },
-      { role: 'user', content: `Previous response: "${response.slice(-200)}"\n\nWhat are the correct action markers for this request?` },
-    ]
-    try {
-      const reader2 = await chatWithProvider(provider, state.activeModel, retryMsgs, null)
-      const dec2 = new TextDecoder()
-      let retryText = ''
-      while (true) {
-        const { done, value } = await reader2.read()
-        if (done) break
-        retryText += parseStreamChunk(provider, dec2.decode(value, { stream: true }))
-      }
-      actions = parseActionMarkers(retryText)
-    } catch {}
+    const retry = await askAI(`Reply with ONLY action markers for: "${command}"`, '')
+    actions = parseActionMarkers(retry)
   }
 
-  let followUpCount = 0
-  for (let i = 0; i < actions.length && followUpCount < 8; i++) {
+  for (let i = 0; i < actions.length && i < 15; i++) {
     const action = actions[i]
-    if (!checkPermission(action.type)) {
-      logs.push(`⛔ ${action.type}: permission denied`)
-      continue
-    }
-    try {
-      const log = await executeAction(action)
-      logs.push(log)
+    if (!checkPermission(action.type)) { logs.push(`⛔ ${action.type}: permission denied`); continue }
 
-      // Only ask for next action if no more actions are already planned
-      const remainingPlanned = actions.slice(i + 1)
-      if (remainingPlanned.length === 0 && (action.type === 'navigate' || action.type === 'inspect') && !log.startsWith('⚠️') && !log.startsWith('❌')) {
-        const followUp = await askForNextAction(provider, response, log)
-        const nextActions = parseActionMarkers(followUp)
-        if (nextActions.length > 0) {
-          actions.push(...nextActions)
-          followUpCount++
-        }
+    let log
+    try { log = await executeAction(action) } catch (err) { log = `❌ ${action.type}: ${err.message}` }
+    logs.push(log)
+
+    // After page-changing actions, wait + inspect to update selectors for remaining actions
+    if ((action.type === 'navigate' || action.type === 'click') && !log.startsWith('⚠️') && !log.startsWith('❌')) {
+      await new Promise(r => setTimeout(r, 2500))
+      // Inject inspect data for the AI to use in remaining steps
+      const tab = await getActiveContentTab()
+      if (tab && isValidUrl(tab.url)) {
+        const elements = await inspectPage(tab.id)
+        logs.push(`🔍 Page updated: ${elements.length > 50 ? 'elements found' : elements}`)
       }
-    } catch (err) {
-      logs.push(`❌ ${action.type}: ${err.message}`)
+    } else if (action.type === 'type') {
+      await new Promise(r => setTimeout(r, 1500))
     }
   }
 
-  // Clean action markers from displayed text
-  const cleanResponse = response.replace(/\[\w+\][\s\S]*?(?=\n(?:\[|\n)|\n*$)/g, '').trim()
-
+  let cleanResponse = response.replace(/\[\w+\][\s\S]*?(?=\n(?:\[|\n)|\n*$)/g, '').trim()
+  if (!cleanResponse) cleanResponse = 'Done!'
   return { response: cleanResponse, logs }
+}
+
+async function askAI(userMsg, context) {
+  try {
+    const msgs = [
+      { role: 'system', content: 'Reply with ONLY action markers. No conversation.' },
+      { role: 'user', content: `${context ? context + '\n' : ''}${userMsg}` },
+    ]
+    const reader = await chatWithProvider(state.activeProvider, state.activeModel, msgs, null)
+    const decoder = new TextDecoder()
+    let r = ''
+    while (true) { const { done, value } = await reader.read(); if (done) break; r += parseStreamChunk(state.activeProvider, decoder.decode(value, { stream: true })) }
+    return r
+  } catch { return '' }
 }
 
 function parseActionMarkers(text) {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Navigator - Sidebar Assistant",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Assistant IA avec agents autonomes, multi-providers, blocage pubs, sub-agents et suivi des coûts.",
   "permissions": [
     "sidePanel",
