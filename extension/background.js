@@ -772,25 +772,30 @@ async function handleAgentCommand(command, conversationHistory) {
   _activeAbort = controller
 
   // Build messages with system prompt, history, and current command
-  const sysPrompt = `You are a browser automation assistant. You can chat conversationally AND execute browser actions.
+  const sysPrompt = `You are a browser automation assistant. You MUST respond conversationally AND include [ACTION] markers when the user asks you to do something.
 
-AVAILABLE ACTIONS (include these in your response to perform them):
-- [NAVIGATE] https://url
-- [CLICK] css-selector
-- [TYPE] selector | text to type
-- [READ]
-- [INSPECT]
-- [DELEGATE] task | name
+AVAILABLE ACTIONS:
+[NAVIGATE] https://url
+[TYPE] css-selector | text to type
+[CLICK] css-selector
+[READ]
+[INSPECT]
 
 CURRENT PERMISSIONS: ${allowed.join(', ') || 'None'}
 
-RULES:
-- You can respond conversationally AND include [ACTION] markers in the same message
-- If the user asks you to DO something, include the appropriate action markers
-- If the user just chats, respond normally without markers
-- After [NAVIGATE], use [INSPECT] to discover page elements before clicking/typing
-- Never guess selectors — use [INSPECT] first
-- For common sites use known selectors: Google input[name="q"], Gemini div[contenteditable], YouTube input[name="search_query"]`
+KNOWN SELECTORS:
+- YouTube search: input[name="search_query"]
+- YouTube video: a[href*="/watch?v="]
+- Google search: input[name="q"]
+- Gemini chat: div[contenteditable="true"]
+
+CRITICAL RULES:
+1. If the user asks you to DO something on a website, you MUST include action markers
+2. NEVER just talk about what you'd do — actually include [NAVIGATE], [TYPE], [CLICK] markers
+3. Always include [TYPE] and [CLICK] after navigating if the request involves searching or interacting
+4. If you need to know the page structure, use [INSPECT] after navigating
+5. BAD: "I'll go to YouTube and search for Mr Beast" (no actions → nothing happens)
+6. GOOD: "Going to YouTube to search for Mr Beast! [NAVIGATE] https://youtube.com [TYPE] input[name=\"search_query\"] | mr beast [CLICK] button[aria-label=\"Search\"]"`
 
   const messages = [{ role: 'system', content: sysPrompt }]
   if (conversationHistory) {
@@ -819,22 +824,25 @@ RULES:
 
   // Phase 2: Parse and execute actions
   const logs = []
-  const actionRegex = /\[(\w+)\]\s*(.*?)(?=\[\w+\]|\n*$)/gs
-  let match
-  const actions = []
-  while ((match = actionRegex.exec(response)) !== null) {
-    const type = match[1].toLowerCase()
-    const rest = match[2].trim()
-    if (type === 'navigate') actions.push({ type, url: rest })
-    else if (type === 'click') actions.push({ type, selector: rest })
-    else if (type === 'type') {
-      const parts = rest.split('|')
-      actions.push({ type, selector: (parts[0] || '').trim(), text: (parts.slice(1).join('|') || '').trim() })
-    } else if (type === 'read' || type === 'inspect') actions.push({ type })
-    else if (type === 'delegate') {
-      const parts = rest.split('|')
-      actions.push({ type, task: (parts[0] || '').trim(), name: (parts.slice(1).join('|') || '').trim() || undefined })
-    }
+  let actions = parseActionMarkers(response)
+
+  // Retry if AI forgot actions but user asked for something
+  if (actions.length === 0) {
+    const retryMsgs = [
+      { role: 'system', content: 'The user asked you to do something on a website, but your previous response had no action markers. Reply with ONLY the action markers needed — no conversation.' },
+      { role: 'user', content: `Previous response: "${response.slice(-200)}"\n\nWhat are the correct action markers for this request?` },
+    ]
+    try {
+      const reader2 = await chatWithProvider(provider, state.activeModel, retryMsgs, null)
+      const dec2 = new TextDecoder()
+      let retryText = ''
+      while (true) {
+        const { done, value } = await reader2.read()
+        if (done) break
+        retryText += parseStreamChunk(provider, dec2.decode(value, { stream: true }))
+      }
+      actions = parseActionMarkers(retryText)
+    } catch {}
   }
 
   let followUpCount = 0
@@ -894,8 +902,8 @@ async function askForNextAction(provider, historyContext, result) {
   if (!config) return ''
   try {
     const msgs = [
-      { role: 'system', content: 'You are a browser automation assistant. Based on the execution result below, decide the next [ACTION]. Output just the action marker.' },
-      { role: 'user', content: `Previous: ${historyContext.slice(-300)}\n\nExecuted: ${result}\n\nNext action:` },
+      { role: 'system', content: 'You are a browser automation assistant. Continue the plan by outputting the next [ACTION] marker. Examples: "[INSPECT]" or "[TYPE] input[name=\"q\"] | hello" or "[CLICK] button". If the plan is complete, output nothing.' },
+      { role: 'user', content: `Original request: ${historyContext.slice(-200)}\n\nLast executed: ${result}\n\nWhat is the single next action? Output just the marker or nothing if done.` },
     ]
     const reader = await chatWithProvider(provider, state.activeModel, msgs, null)
     const decoder = new TextDecoder()
