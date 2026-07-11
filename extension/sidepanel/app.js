@@ -29,108 +29,20 @@ const PROVIDERS = [
   { id: 'xai', label: 'xAI (Grok)', ph: 'xai-...' },
 ]
 
+// Fallback models when auto-fetch hasn't loaded yet.
+// Full model lists live in background.js DEFAULT_MODELS and are auto-fetched from provider APIs.
 const MODELS = {
-  openai: [
-    { id: 'gpt-5.6-sol-pro', label: 'GPT-5.6 Sol Pro' },
-    { id: 'gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { id: 'gpt-5.6-terra-pro', label: 'GPT-5.6 Terra Pro' },
-    { id: 'gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-    { id: 'gpt-5.6-luna-pro', label: 'GPT-5.6 Luna Pro' },
-    { id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { id: 'o4-mini-high', label: 'o4 Mini High' },
-    { id: 'o4-mini', label: 'o4 Mini' },
-    { id: 'o3-pro', label: 'o3 Pro' },
-    { id: 'o3', label: 'o3' },
-    { id: 'o3-mini-high', label: 'o3 Mini High' },
-    { id: 'o3-mini', label: 'o3 Mini' },
-    { id: 'gpt-5.5-pro', label: 'GPT-5.5 Pro' },
-    { id: 'gpt-5.5', label: 'GPT-5.5' },
-    { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-    { id: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
-  ],
-  anthropic: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-    { id: 'claude-fable-5', label: 'Claude Fable 5' },
-    { id: 'claude-opus-4.8-fast', label: 'Claude Opus 4.8 Fast' },
-    { id: 'claude-opus-4.8', label: 'Claude Opus 4.8' },
-    { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-    { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-sonnet-4', label: 'Claude Sonnet 4' },
-    { id: 'claude-opus-4', label: 'Claude Opus 4' },
-  ],
-  google: [
-    { id: 'gemini-3.5-flash-001', label: 'Gemini 3.5 Flash' },
-    { id: 'gemini-3.1-flash-lite-001', label: 'Gemini 3.1 Flash Lite' },
-    { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-    { id: 'gemini-2.5-pro-001', label: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash-001', label: 'Gemini 2.5 Flash' },
-    { id: 'gemini-2.5-flash-lite-001', label: 'Gemini 2.5 Flash Lite' },
-  ],
-  mistral: [
-    { id: 'mistral-medium-3-5-2604', label: 'Mistral Medium 3.5' },
-    { id: 'mistral-small-2603', label: 'Mistral Small 4' },
-    { id: 'mistral-large-2512', label: 'Mistral Large 3' },
-    { id: 'ministral-3-14b-2512', label: 'Ministral 3 14B' },
-    { id: 'ministral-3-8b-2512', label: 'Ministral 3 8B' },
-    { id: 'codestral-2508', label: 'Codestral' },
-    { id: 'pixtral-large-2411', label: 'Pixtral Large' },
-  ],
-  deepseek: [
-    { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-    { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-    { id: 'deepseek-v3.2', label: 'DeepSeek V3.2' },
-    { id: 'deepseek-chat', label: 'DeepSeek Chat' },
-    { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
-  ],
-  openrouter: [
-    { id: 'openai/gpt-5.6-sol', label: 'GPT-5.6 Sol' },
-    { id: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' },
-    { id: 'openai/o4-mini', label: 'o4 Mini' },
-    { id: 'openai/o3-mini-high', label: 'o3 Mini High' },
-    { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' },
-    { id: 'anthropic/claude-fable-5', label: 'Claude Fable 5' },
-    { id: 'anthropic/claude-opus-4.8', label: 'Claude Opus 4.8' },
-    { id: 'anthropic/claude-haiku-4.5', label: 'Claude Haiku 4.5' },
-    { id: 'google/gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-    { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-    { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-    { id: 'mistralai/mistral-medium-3-5', label: 'Mistral Medium 3.5' },
-    { id: 'mistralai/mistral-small-2603', label: 'Mistral Small 4' },
-  ],
-  ollama: [
-    { id: 'llama3.3:70b', label: 'Llama 3.3 70B' },
-    { id: 'llama3.2:3b', label: 'Llama 3.2 3B' },
-    { id: 'llama3.2:1b', label: 'Llama 3.2 1B' },
-    { id: 'qwen2.5:7b', label: 'Qwen 2.5 7B' },
-    { id: 'gemma2:9b', label: 'Gemma 2 9B' },
-    { id: 'mistral:7b', label: 'Mistral 7B' },
-    { id: 'phi3:14b', label: 'Phi-3 14B' },
-    { id: 'nous-hermes2:10b', label: 'Nous Hermes 2 10B' },
-  ],
-  groq: [
-    { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' },
-    { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant' },
-    { id: 'mixtral-8x7b-32768', label: 'Mixtral 8x7B' },
-    { id: 'gemma2-9b-it', label: 'Gemma 2 9B' },
-    { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 70B' },
-  ],
-  together: [
-    { id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' },
-    { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral 8x22B' },
-    { id: 'google/gemma-2-27b-it', label: 'Gemma 2 27B' },
-    { id: 'deepseek-ai/DeepSeek-R1', label: 'DeepSeek R1' },
-    { id: 'Qwen/Qwen2.5-72B-Instruct-Turbo', label: 'Qwen 2.5 72B' },
-  ],
-  perplexity: [
-    { id: 'sonar-pro', label: 'Sonar Pro' },
-    { id: 'sonar', label: 'Sonar' },
-    { id: 'sonar-deep-research', label: 'Sonar Deep Research' },
-  ],
-  xai: [
-    { id: 'grok-2', label: 'Grok 2' },
-    { id: 'grok-2-mini', label: 'Grok 2 Mini' },
-    { id: 'grok-vision', label: 'Grok Vision' },
-  ],
+  openai: [{ id: 'gpt-5.6-luna', label: 'GPT-5.6 Luna' }, { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' }],
+  anthropic: [{ id: 'claude-sonnet-5', label: 'Claude Sonnet 5' }, { id: 'claude-haiku-4.5', label: 'Claude Haiku 4.5' }],
+  google: [{ id: 'gemini-3.5-flash-001', label: 'Gemini 3.5 Flash' }, { id: 'gemini-2.5-pro-001', label: 'Gemini 2.5 Pro' }],
+  mistral: [{ id: 'mistral-medium-3-5-2604', label: 'Mistral Medium 3.5' }, { id: 'mistral-small-2603', label: 'Mistral Small 4' }],
+  deepseek: [{ id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' }, { id: 'deepseek-chat', label: 'DeepSeek Chat' }],
+  openrouter: [{ id: 'openai/gpt-5.6-luna', label: 'GPT-5.6 Luna' }, { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' }],
+  ollama: [{ id: 'llama3.3:70b', label: 'Llama 3.3 70B' }, { id: 'llama3.2:3b', label: 'Llama 3.2 3B' }],
+  groq: [{ id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B' }, { id: 'gemma2-9b-it', label: 'Gemma 2 9B' }],
+  together: [{ id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo', label: 'Llama 3.3 70B Turbo' }, { id: 'mistralai/Mixtral-8x22B-Instruct-v0.1', label: 'Mixtral 8x22B' }],
+  perplexity: [{ id: 'sonar-pro', label: 'Sonar Pro' }, { id: 'sonar', label: 'Sonar' }],
+  xai: [{ id: 'grok-2', label: 'Grok 2' }, { id: 'grok-2-mini', label: 'Grok 2 Mini' }],
 }
 
 const LEVELS = [
@@ -516,7 +428,8 @@ async function sendChat() {
   S._buffer = ''
   S._msgElement = msgDiv
 
-  await bg({ type: 'chat-send', messages: [{ role: 'user', content: text }] })
+  const history = S.chat.map(m => ({ role: m.role, content: m.content }))
+  await bg({ type: 'chat-send', messages: history })
 }
 
 function autoSaveConv() {

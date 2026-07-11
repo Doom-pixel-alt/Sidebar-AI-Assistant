@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check JavaScript syntax
+        run: |
+          node --check extension/background.js
+          node --check extension/sidepanel/app.js
+          node --check extension/content.js
+      - name: Validate manifest.json
+        run: |
+          node -e "const m = require('./extension/manifest.json'); \
+            assert(m.manifest_version === 3, 'MV3 required'); \
+            assert(m.background?.service_worker, 'service_worker required'); \
+            console.log('manifest.json OK')"
+      - name: Check for console.log statements
+        run: |
+          ! grep -rn 'console\.log' extension/background.js extension/sidepanel/app.js | grep -v 'Service worker loaded' | grep -v 'Model fetch failed' && echo "No stray console.log" || echo "Warning: stray console.log found"
