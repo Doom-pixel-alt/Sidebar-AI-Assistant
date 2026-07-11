@@ -758,7 +758,7 @@ async function handleChat(messages, tools) {
   return { success: true, content: fullContent }
 }
 
-// ===== AGENT COMMANDS =====
+// ===== AGENT COMMANDS (Talk + Act) =====
 async function handleAgentCommand(command, conversationHistory) {
   const provider = state.activeProvider
   const config = state.providers[provider]
@@ -767,147 +767,148 @@ async function handleAgentCommand(command, conversationHistory) {
   const allowed = getCurrentPermissions()
   if (allowed.length === 0) return { response: '⚠️ No permissions enabled. Go to Settings to enable agent permissions.' }
 
-  // Phase 1: Extract intent — AI helps but we fallback to keyword parsing
   abortActiveStream()
   const controller = new AbortController()
   _activeAbort = controller
-  const plan = await extractIntent(command, conversationHistory, controller.signal)
-  _activeAbort = null
 
-  // Fallback: keyword-based parsing if AI fails
-  if (!plan?.url && !plan?.action) {
-    const fallback = parseIntentKeywords(command)
-    if (fallback) {
-      plan.url = fallback.url
-      plan.action = fallback.action
-      plan.query = fallback.query || 'hello'
-      plan.message = fallback.message || ''
-    }
-  }
+  // Build messages with system prompt, history, and current command
+  const sysPrompt = `You are a browser automation assistant. You can chat conversationally AND execute browser actions.
 
-  if (!plan?.url && !plan?.action) {
-    return { response: "I couldn't understand what you want me to do. Try something like: 'go to google.com' or 'open youtube and search for cats'." }
-  }
+AVAILABLE ACTIONS (include these in your response to perform them):
+- [NAVIGATE] https://url
+- [CLICK] css-selector
+- [TYPE] selector | text to type
+- [READ]
+- [INSPECT]
+- [DELEGATE] task | name
 
-  // Default query if none provided
-  if ((plan.action === 'ask' || plan.action === 'search') && !plan.query) {
-    plan.query = 'hello world'
-  }
+CURRENT PERMISSIONS: ${allowed.join(', ') || 'None'}
 
-  const logs = []
-  let response = plan.message || ''
+RULES:
+- You can respond conversationally AND include [ACTION] markers in the same message
+- If the user asks you to DO something, include the appropriate action markers
+- If the user just chats, respond normally without markers
+- After [NAVIGATE], use [INSPECT] to discover page elements before clicking/typing
+- Never guess selectors — use [INSPECT] first
+- For common sites use known selectors: Google input[name="q"], Gemini div[contenteditable], YouTube input[name="search_query"]`
 
-  // Phase 2: Execute plan step by step
-  try {
-    if (plan.url) {
-      await navigateTo(plan.url, logs)
-    }
-
-    if (plan.action && checkPermission(plan.action)) {
-      await executeWithInspect(plan, logs)
-    } else if (plan.action) {
-      logs.push(`⛔ ${plan.action}: permission denied`)
-    }
-
-    // Phase 3: Ask AI to summarize
-    const summary = await askForSummary(logs)
-    if (summary) response = summary
-  } catch (err) {
-    logs.push(`❌ ${err.message}`)
-  }
-
-  return { response, logs }
-}
-
-async function extractIntent(command, conversationHistory, signal) {
-  const msgs = [
-    { role: 'system', content: `Extract a browser action plan from the user's request. Respond with valid JSON only, no other text. If no query is specified, use "hello" as default.
-
-Examples:
-User: "va sur google.com"
-{"url":"https://google.com","action":"navigate","message":"Going to Google"}
-
-User: "ouvre gemini et pose lui une question"
-{"url":"https://gemini.google.com","action":"ask","query":"hello","message":"Opening Gemini"}
-
-User: "cherche des photos de chats"
-{"url":"https://google.com","action":"search","query":"cat photos","message":"Searching for cat photos"}
-
-User: "recommence" 
-(use conversation history to determine the original request)
-
-KNOWN URLS:
-- google → https://google.com
-- gemini → https://gemini.google.com
-- youtube → https://youtube.com
-- gmail → https://mail.google.com
-- chatgpt → https://chatgpt.com
-
-If can't understand: {"error":"explanation"}` },
-  ]
-
+  const messages = [{ role: 'system', content: sysPrompt }]
   if (conversationHistory) {
-    for (const m of conversationHistory.slice(-4)) {
-      msgs.push({ role: m.role, content: m.content })
+    for (const m of conversationHistory.slice(-10)) {
+      messages.push({ role: m.role, content: m.content })
     }
   }
-  msgs.push({ role: 'user', content: command })
+  messages.push({ role: 'user', content: command })
 
+  // Phase 1: Get AI's full response (conversation + action markers)
+  let response = ''
   try {
-    const reader = await chatWithProvider(state.activeProvider, state.activeModel, msgs, null, signal)
+    const reader = await chatWithProvider(provider, state.activeModel, messages, null, controller.signal)
     const decoder = new TextDecoder()
-    let text = ''
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      text += parseStreamChunk(state.activeProvider, decoder.decode(value, { stream: true }))
+      response += parseStreamChunk(provider, decoder.decode(value, { stream: true }))
     }
-    return JSON.parse(text)
-  } catch {
-    return { error: "Failed to understand the request. Try a different phrasing." }
+  } catch (err) {
+    _activeAbort = null
+    if (err.name === 'AbortError') return { response: 'Cancelled.', logs: [] }
+    return { response: `Error: ${err.message}`, logs: [] }
   }
+  _activeAbort = null
+
+  // Phase 2: Parse and execute actions
+  const logs = []
+  const actionRegex = /\[(\w+)\]\s*(.*?)(?=\[\w+\]|\n*$)/gs
+  let match
+  const actions = []
+  while ((match = actionRegex.exec(response)) !== null) {
+    const type = match[1].toLowerCase()
+    const rest = match[2].trim()
+    if (type === 'navigate') actions.push({ type, url: rest })
+    else if (type === 'click') actions.push({ type, selector: rest })
+    else if (type === 'type') {
+      const parts = rest.split('|')
+      actions.push({ type, selector: (parts[0] || '').trim(), text: (parts.slice(1).join('|') || '').trim() })
+    } else if (type === 'read' || type === 'inspect') actions.push({ type })
+    else if (type === 'delegate') {
+      const parts = rest.split('|')
+      actions.push({ type, task: (parts[0] || '').trim(), name: (parts.slice(1).join('|') || '').trim() || undefined })
+    }
+  }
+
+  let followUpCount = 0
+  for (let i = 0; i < actions.length && followUpCount < 8; i++) {
+    const action = actions[i]
+    if (!checkPermission(action.type)) {
+      logs.push(`⛔ ${action.type}: permission denied`)
+      continue
+    }
+    try {
+      const log = await executeAction(action)
+      logs.push(log)
+
+      // After navigate or inspect, ask AI for next action
+      if ((action.type === 'navigate' || action.type === 'inspect') && !log.startsWith('⚠️') && !log.startsWith('❌')) {
+        const followUp = await askForNextAction(provider, response, log)
+        const nextActions = parseActionMarkers(followUp)
+        if (nextActions.length > 0) {
+          actions.splice(i + 1, actions.length - i - 1, ...nextActions)
+          followUpCount++
+        }
+      }
+    } catch (err) {
+      logs.push(`❌ ${action.type}: ${err.message}`)
+    }
+  }
+
+  // Clean action markers from displayed text
+  const cleanResponse = response.replace(/\[\w+\][\s\S]*?(?=\n(?:\[|\n)|\n*$)/g, '').trim()
+
+  return { response: cleanResponse, logs }
 }
 
-function parseIntentKeywords(command) {
-  const c = command.toLowerCase()
-  const sites = {
-    'youtube': { url: 'https://youtube.com', action: 'search' },
-    'google': { url: 'https://google.com', action: 'search' },
-    'gemini': { url: 'https://gemini.google.com', action: 'ask' },
-    'gmail': { url: 'https://mail.google.com', action: 'navigate' },
-    'chatgpt': { url: 'https://chatgpt.com', action: 'ask' },
-    'github': { url: 'https://github.com', action: 'navigate' },
-  }
-
-  const words = c.split(/\s+/)
-  let best = { url: null, action: null, query: '', message: '' }
-
-  for (const [name, info] of Object.entries(sites)) {
-    if (c.includes(name)) {
-      best = info
-      break
+function parseActionMarkers(text) {
+  const actions = []
+  const re = /\[(\w+)\]\s*(.*?)(?=\[\w+\]|\n*$)/gs
+  let m
+  while ((m = re.exec(text)) !== null) {
+    const type = m[1].toLowerCase()
+    const rest = m[2].trim()
+    if (type === 'navigate') actions.push({ type, url: rest })
+    else if (type === 'click') actions.push({ type, selector: rest })
+    else if (type === 'type') {
+      const parts = rest.split('|')
+      actions.push({ type, selector: (parts[0] || '').trim(), text: (parts.slice(1).join('|') || '').trim() })
+    } else if (type === 'read' || type === 'inspect') actions.push({ type })
+    else if (type === 'delegate') {
+      const parts = rest.split('|')
+      actions.push({ type, task: (parts[0] || '').trim(), name: (parts.slice(1).join('|') || '').trim() || undefined })
     }
   }
+  return actions
+}
 
-  if (!best.url) {
-    // Try to extract a URL directly
-    const urlMatch = c.match(/(?:va\s+(?:sur|à|chez)\s+)?(\S+\.\w{2,})/i)
-    if (urlMatch) {
-      const domain = urlMatch[1].replace(/^https?:\/\//, '')
-      best = { url: `https://${domain}`, action: 'navigate', query: '', message: `Going to ${domain}` }
+async function askForNextAction(provider, historyContext, result) {
+  const config = state.providers[provider]
+  if (!config) return ''
+  try {
+    const msgs = [
+      { role: 'system', content: 'You are a browser automation assistant. Based on the execution result below, decide the next [ACTION]. Output just the action marker.' },
+      { role: 'user', content: `Previous: ${historyContext.slice(-300)}\n\nExecuted: ${result}\n\nNext action:` },
+    ]
+    const reader = await chatWithProvider(provider, state.activeModel, msgs, null)
+    const decoder = new TextDecoder()
+    let r = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      r += parseStreamChunk(provider, decoder.decode(value, { stream: true }))
     }
+    return r
+  } catch {
+    return ''
   }
-
-  if (best.url && (best.action === 'ask' || best.action === 'search')) {
-    // Extract query: text after "pour", "sur", "demande", "cherche", "question"
-    const queryMatch = c.match(/(?:demande|question|pose|cherche|recherche|sur)\s+(.+?)(?:\s+et|\s*$)/i)
-    best.query = queryMatch ? queryMatch[1].trim() : 'hello world'
-    best.message = best.query && best.query !== 'hello world'
-      ? `Asking ${best.query} on ${best.url}`
-      : `Opening ${best.url}`
-  }
-
-  return best.url ? best : null
 }
 
 async function navigateTo(url, logs) {
@@ -923,89 +924,6 @@ async function navigateTo(url, logs) {
   } catch (err) {
     logs.push(`❌ Navigation failed: ${err.message}`)
     throw err
-  }
-}
-
-async function executeWithInspect(plan, logs) {
-  const tab = await getActiveContentTab()
-  if (!tab || !isValidUrl(tab?.url)) {
-    logs.push(`⚠️ Page not ready yet`)
-    return
-  }
-
-  if (plan.action === 'ask' || plan.action === 'search') {
-    // Inspect page to find input field
-    const inspectResult = await inspectPage(tab.id)
-    logs.push(`🔍 Inspected page`)
-
-    const elements = safeJsonParse(inspectResult, [])
-    const inputEl = elements.find(el =>
-      el.contenteditable || el.role === 'textbox' || el.role === 'combobox' ||
-      el.role === 'searchbox' || el.tag === 'textarea' ||
-      (el.tag === 'input' && (el.type === 'text' || el.type === 'search' || el.type === 'email')) ||
-      el.placeholder || el.name === 'q'
-    )
-
-    if (inputEl?.selector) {
-      const query = plan.query || (plan.action === 'search' ? 'search' : 'hello')
-      await typeInField(tab.id, inputEl.selector, query, logs)
-
-      // Send via Enter (works on all chat UIs)
-      await new Promise(r => setTimeout(r, 500))
-      await pressEnterFallback(tab.id, logs)
-    } else {
-      logs.push(`🔍 Searching deeper for input field...`)
-      // Try with deep page search
-      const found = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        func: () => {
-          // Search any editable element via deep query
-          const candidates = document.querySelectorAll(
-            'div[contenteditable], [contenteditable], textarea, input:not([type="hidden"]), [role="textbox"], [role="combobox"], [role="searchbox"], .ql-editor, .ProseMirror, [data-slate-editor]'
-          )
-          for (const el of candidates) {
-            const rect = el.getBoundingClientRect()
-            if (rect.width > 30 && rect.height > 20) {
-              el.focus()
-              return el.getAttribute('contenteditable')
-                ? 'contenteditable'
-                : el.tagName.toLowerCase() + (el.type ? `[type="${el.type}"]` : '')
-            }
-          }
-          // Last resort: find the largest input-like element
-          let best = null, bestArea = 0
-          document.querySelectorAll('*').forEach(el => {
-            const r = el.getBoundingClientRect()
-            const area = r.width * r.height
-            if (area > bestArea && area < 500000 && r.width > 50 && r.height > 20) {
-              if (el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT' ||
-                  el.getAttribute('role') === 'textbox' || el.getAttribute('role') === 'combobox') {
-                best = el; bestArea = area
-              }
-            }
-          })
-          if (best) { best.focus(); return 'deep-fallback' }
-          return null
-        },
-      })
-      if (found?.[0]?.result) {
-        const query = plan.query || 'hello'
-        await typeInField(tab.id, '', query, logs)
-        await new Promise(r => setTimeout(r, 1000))
-        await pressEnterFallback(tab.id, logs)
-      } else {
-        logs.push(`⚠️ Could not find any input field on the page`)
-      }
-    }
-  } else if (plan.action === 'click-first') {
-    const result = await inspectPage(tab.id)
-    const elements = safeJsonParse(result, [])
-    const firstLink = elements.find(el => el.tag === 'a' && el.href)
-    if (firstLink?.selector) {
-      await clickElement(tab.id, firstLink.selector, logs)
-    } else {
-      logs.push(`⚠️ No links found`)
-    }
   }
 }
 
@@ -1195,11 +1113,51 @@ async function pressEnterFallback(tabId, logs) {
 }
 
 
-async function askForSummary(logs) {
-  if (logs.length === 0) return ''
-  const actions = logs.filter(l => l.startsWith('✅') || l.startsWith('✏️') || l.startsWith('↩'))
-  if (actions.length === 0) return ''
-  return `Done! ${actions.join(', ')}.`
+async function executeAction(action) {
+  switch (action.type) {
+    case 'navigate':
+      await navigateTo(action.url, [])
+      return `✅ Navigated to ${action.url}`
+    case 'click': {
+      const tab = await getActiveContentTab()
+      if (!tab || !isValidUrl(tab?.url)) return `⚠️ Cannot click: page not ready`
+      const r = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: (s) => {
+          const el = document.querySelector(s)
+          if (el) { el.click(); return true }
+          return false
+        },
+        args: [action.selector],
+      })
+      return r?.[0]?.result ? `✅ Clicked ${action.selector}` : `⚠️ Element not found: ${action.selector}`
+    }
+    case 'type': {
+      const tab = await getActiveContentTab()
+      if (!tab || !isValidUrl(tab?.url)) return `⚠️ Cannot type: page not ready`
+      await typeInField(tab.id, action.selector, action.text || '', [])
+      return `✏️ Typed message`
+    }
+    case 'read': {
+      const tab = await getActiveContentTab()
+      if (!tab || !isValidUrl(tab?.url)) return `⚠️ Cannot read: page not ready`
+      const r = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => document.body.innerText.slice(0, 2000),
+      })
+      return `📄 ${r?.[0]?.result?.slice(0, 200) || 'Empty'}`
+    }
+    case 'inspect': {
+      const tab = await getActiveContentTab()
+      if (!tab || !isValidUrl(tab?.url)) return `⚠️ Cannot inspect: page not ready`
+      const r = await inspectPage(tab.id)
+      return `🔍 Page elements found`
+    }
+    case 'delegate':
+      return `✅ Task delegated`
+    default:
+      return `⚠️ Unknown action: ${action.type}`
+  }
 }
 
 function safeJsonParse(str, fallback) {
